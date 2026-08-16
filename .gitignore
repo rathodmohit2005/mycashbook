@@ -1,0 +1,7 @@
+# Local environment and configuration files containing secrets
+config.local.php
+.env
+
+# Database backups
+backups/*.sql
+backups/

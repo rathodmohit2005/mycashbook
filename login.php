@@ -1,0 +1,143 @@
+<?php
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
+// session_start is now handled in auth.php
+
+
+if (isset($_SESSION['user_id'])) {
+    header("Location: index");
+    exit;
+}
+
+$message = '';
+$messageType = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    checkCSRF();
+
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+
+    if ($email && $password) {
+        $stmt = $conn->prepare("SELECT id, name, password FROM users WHERE email = ?");
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows === 1) {
+            $user = $result->fetch_assoc();
+            if (password_verify($password, $user['password'])) {
+                // Regenerate session ID to prevent session fixation
+                session_regenerate_id(true);
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['user_name'] = $user['name'];
+                
+                // Get security status (PIN & Biometric)
+                $stmt_pin = $conn->prepare("SELECT pin_code, biometric_enabled FROM users WHERE id = ?");
+                $stmt_pin->bind_param("i", $user['id']);
+                $stmt_pin->execute();
+                $sec_res = $stmt_pin->get_result()->fetch_assoc();
+                
+                $_SESSION['has_bio'] = (bool)$sec_res['biometric_enabled'];
+
+                if (!empty($sec_res['pin_code'])) {
+                    $_SESSION['has_pin'] = true;
+                    $_SESSION['app_unlocked'] = false;
+                    header("Location: lock");
+                } else {
+                    $_SESSION['has_pin'] = false;
+                    $_SESSION['app_unlocked'] = true;
+                    header("Location: index");
+                }
+                exit;
+            } else {
+                $message = "Incorrect password. Please try again.";
+                $messageType = "danger";
+            }
+        } else {
+            $message = "No account found with this email address.";
+            $messageType = "danger";
+        }
+    } else {
+        $message = "Please fill in all fields.";
+        $messageType = "danger";
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Login - Cash Book</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="manifest" href="manifest">
+    <meta name="theme-color" content="#6366f1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="auth-body">
+    <?php include 'header.php'; ?>
+
+    <div class="auth-page">
+        <!-- Visual Side (Desktop only) -->
+        <div class="auth-visual">
+            <div class="auth-visual-content">
+                <h1>Manage Your Money Smarter.</h1>
+                <p>Track every penny, set budgets, and achieve your financial goals with the world's most intuitive Cash Book.</p>
+            </div>
+        </div>
+
+        <!-- Form Side -->
+        <div class="auth-form-side">
+            <div class="auth-container">
+                <h2 style="margin-bottom: 0.5rem; font-weight: 700; font-size: 2rem;">Welcome Back</h2>
+                <p style="color: var(--text-muted); margin-bottom: 2rem; font-size: 0.9rem;">Please enter your details to sign in.</p>
+
+                <?php if ($message): ?>
+                    <div class="alert alert-<?= $messageType ?>">
+                        <?= htmlspecialchars($message) ?>
+                    </div>
+                <?php endif; ?>
+
+                <form action="login" method="POST" novalidate id="loginForm">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <div class="form-group">
+                        <label class="form-label" for="email">Email Address <span style="color:#ef4444">*</span></label>
+                        <input type="email" name="email" id="email" class="form-control" required placeholder="you@example.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="password">Password <span style="color:#ef4444">*</span></label>
+                        <div style="position: relative;">
+                            <input type="password" name="password" id="password" class="form-control" required placeholder="••••••••" style="padding-right: 40px;">
+                            <i class="fa-regular fa-eye" id="togglePassword" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted); font-size: 1.1rem; padding: 5px;"></i>
+                        </div>
+                        <div style="text-align: right; margin-top: 0.4rem;">
+                            <a href="forgot_password" style="color: var(--primary); text-decoration: none; font-size: 0.8rem; font-weight: 500;">
+                                Forgot Password?
+                            </a>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn" style="margin-top: 1rem; font-weight: 600;">Sign In</button>
+                </form>
+
+                <p style="text-align: center; margin-top: 2.5rem; color: var(--text-muted); font-size: 0.875rem;">
+                    Don't have an account? <a href="register" style="color: var(--primary); text-decoration: none; font-weight: 600;">Register now</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+        <script>
+            document.getElementById('togglePassword').addEventListener('click', function () {
+                const password = document.getElementById('password');
+                const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+                password.setAttribute('type', type);
+                this.classList.toggle('fa-eye-slash');
+                this.classList.toggle('fa-eye');
+            });
+        </script>
+        <script src="assets/js/app.js"></script>
+</body>
+</html>
