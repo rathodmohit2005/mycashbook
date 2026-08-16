@@ -1,4 +1,5 @@
 <?php
+
 $currentPage = basename($_SERVER['PHP_SELF']);
 $pageName = str_replace('.php', '', $currentPage);
 
